@@ -175,6 +175,9 @@
       <h3 id="resultName"></h3>
       <p id="resultArtist"></p>
       <p id="resultAlbum"></p>
+      <p id="resultFrom" style="font-size:12px;color:#666;"></p>
+      <audio id="resultAudio" controls style="width:100%;margin-top:8px;display:none;"></audio>
+      <p id="noPlayMsg" style="font-size:12px;color:#e08a8a;display:none;">这首歌暂时无法在线播放（可能是版权限制）</p>
     </div>
   </div>
 </div>
@@ -234,6 +237,19 @@
       document.getElementById('resultName').textContent = data.name;
       document.getElementById('resultArtist').textContent = '歌手：' + data.artist;
       document.getElementById('resultAlbum').textContent = data.album ? '专辑：' + data.album : '';
+      document.getElementById('resultFrom').textContent = '来自歌单《' + data.fromPlaylist + '》';
+
+      const audioEl = document.getElementById('resultAudio');
+      const noPlayMsg = document.getElementById('noPlayMsg');
+      if (data.playUrl) {
+        audioEl.src = data.playUrl;
+        audioEl.style.display = 'block';
+        noPlayMsg.style.display = 'none';
+      } else {
+        audioEl.style.display = 'none';
+        audioEl.src = '';
+        noPlayMsg.style.display = 'block';
+      }
 
       resultCard.classList.add('show');
       againBtn.style.display = 'block';
