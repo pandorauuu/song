@@ -1,0 +1,14 @@
+{
+  "name": "song-recommend",
+  "version": "1.0.0",
+  "description": "勾选偏好推荐歌曲网站",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "cors": "^2.8.5",
+    "axios": "^1.7.2"
+  }
+}
