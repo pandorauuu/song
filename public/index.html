@@ -1,1 +1,251 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>勾一勾，测测你适合听哪首歌</title>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    min-height: 100vh;
+    background: #12121e;
+    color: #eee;
+    font-family: "Microsoft YaHei", sans-serif;
+    display: flex;
+    justify-content: center;
+    padding: 40px 16px;
+  }
+  .container {
+    width: 100%;
+    max-width: 480px;
+  }
+  h1 {
+    text-align: center;
+    font-size: 22px;
+    margin-bottom: 30px;
+    background: linear-gradient(135deg, #7c6cff, #ff5ca8);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+  .group {
+    margin-bottom: 22px;
+  }
+  .group-title {
+    font-size: 14px;
+    color: #999;
+    margin-bottom: 10px;
+  }
+  .pills {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+  .pill {
+    padding: 8px 18px;
+    border-radius: 20px;
+    background: #1e1e30;
+    border: 1px solid #333;
+    cursor: pointer;
+    font-size: 14px;
+    color: #ccc;
+    transition: all 0.2s ease;
+    user-select: none;
+  }
+  .pill.active {
+    background: linear-gradient(135deg, #7c6cff, #ff5ca8);
+    color: #fff;
+    border-color: transparent;
+  }
+  .actions {
+    display: flex;
+    gap: 12px;
+    margin: 30px 0;
+  }
+  button {
+    flex: 1;
+    padding: 14px;
+    border-radius: 12px;
+    border: none;
+    font-size: 15px;
+    cursor: pointer;
+    font-weight: bold;
+  }
+  #recommendBtn {
+    background: linear-gradient(135deg, #7c6cff, #ff5ca8);
+    color: #fff;
+  }
+  #againBtn {
+    background: #232338;
+    color: #ccc;
+    display: none;
+  }
+  .result-card {
+    background: #1a1a2b;
+    border-radius: 16px;
+    padding: 20px;
+    display: none;
+    opacity: 0;
+    transform: translateY(10px);
+    transition: opacity 0.4s ease, transform 0.4s ease;
+  }
+  .result-card.show {
+    display: flex;
+    gap: 16px;
+    opacity: 1;
+    transform: translateY(0);
+  }
+  .result-card img {
+    width: 90px;
+    height: 90px;
+    border-radius: 10px;
+    object-fit: cover;
+    background: #333;
+  }
+  .result-info h3 {
+    margin: 0 0 6px;
+    font-size: 17px;
+  }
+  .result-info p {
+    margin: 2px 0;
+    font-size: 13px;
+    color: #999;
+  }
+  .msg {
+    text-align: center;
+    color: #999;
+    font-size: 14px;
+    margin-top: 10px;
+  }
+  .loading {
+    text-align: center;
+    color: #7c6cff;
+    font-size: 14px;
+    margin-top: 10px;
+  }
+</style>
+</head>
+<body>
 
+<div class="container">
+  <h1>勾一勾，测测你现在适合听哪首歌</h1>
+
+  <div class="group">
+    <div class="group-title">心情</div>
+    <div class="pills" data-group="mood">
+      <div class="pill" data-value="emo">emo</div>
+      <div class="pill" data-value="元气">元气</div>
+      <div class="pill" data-value="放松">放松</div>
+      <div class="pill" data-value="燃">燃</div>
+    </div>
+  </div>
+
+  <div class="group">
+    <div class="group-title">场景</div>
+    <div class="pills" data-group="scene">
+      <div class="pill" data-value="通勤">通勤</div>
+      <div class="pill" data-value="运动">运动</div>
+      <div class="pill" data-value="睡前">睡前</div>
+      <div class="pill" data-value="学习">学习</div>
+    </div>
+  </div>
+
+  <div class="group">
+    <div class="group-title">语种</div>
+    <div class="pills" data-group="lang">
+      <div class="pill" data-value="华语">华语</div>
+      <div class="pill" data-value="英文">英文</div>
+      <div class="pill" data-value="日语">日语</div>
+      <div class="pill" data-value="纯音乐">纯音乐</div>
+    </div>
+  </div>
+
+  <div class="actions">
+    <button id="recommendBtn">帮我推荐</button>
+    <button id="againBtn">再换一首</button>
+  </div>
+
+  <div id="msg" class="msg"></div>
+  <div id="loading" class="loading" style="display:none;">正在为你挑选中...</div>
+
+  <div id="resultCard" class="result-card">
+    <img id="resultImg" src="" alt="封面">
+    <div class="result-info">
+      <h3 id="resultName"></h3>
+      <p id="resultArtist"></p>
+      <p id="resultAlbum"></p>
+    </div>
+  </div>
+</div>
+
+<script>
+  const selected = { mood: null, scene: null, lang: null };
+
+  document.querySelectorAll('.pills').forEach(group => {
+    const groupName = group.dataset.group;
+    group.querySelectorAll('.pill').forEach(pill => {
+      pill.addEventListener('click', () => {
+        const isActive = pill.classList.contains('active');
+        group.querySelectorAll('.pill').forEach(p => p.classList.remove('active'));
+        if (!isActive) {
+          pill.classList.add('active');
+          selected[groupName] = pill.dataset.value;
+        } else {
+          selected[groupName] = null;
+        }
+      });
+    });
+  });
+
+  const msgEl = document.getElementById('msg');
+  const loadingEl = document.getElementById('loading');
+  const resultCard = document.getElementById('resultCard');
+  const recommendBtn = document.getElementById('recommendBtn');
+  const againBtn = document.getElementById('againBtn');
+
+  async function fetchRecommend() {
+    if (!selected.mood && !selected.scene && !selected.lang) {
+      msgEl.textContent = '请至少选一个偏好标签';
+      resultCard.classList.remove('show');
+      return;
+    }
+    msgEl.textContent = '';
+    loadingEl.style.display = 'block';
+    resultCard.classList.remove('show');
+
+    const params = new URLSearchParams();
+    if (selected.mood) params.set('mood', selected.mood);
+    if (selected.scene) params.set('scene', selected.scene);
+    if (selected.lang) params.set('lang', selected.lang);
+
+    try {
+      const resp = await fetch('/api/recommend?' + params.toString());
+      const data = await resp.json();
+
+      loadingEl.style.display = 'none';
+
+      if (!resp.ok) {
+        msgEl.textContent = data.error || '推荐失败，请稍后再试';
+        return;
+      }
+
+      document.getElementById('resultImg').src = data.picUrl || '';
+      document.getElementById('resultName').textContent = data.name;
+      document.getElementById('resultArtist').textContent = '歌手：' + data.artist;
+      document.getElementById('resultAlbum').textContent = data.album ? '专辑：' + data.album : '';
+
+      resultCard.classList.add('show');
+      againBtn.style.display = 'block';
+    } catch (e) {
+      loadingEl.style.display = 'none';
+      msgEl.textContent = '网络请求失败，请检查后端服务是否启动';
+    }
+  }
+
+  recommendBtn.addEventListener('click', fetchRecommend);
+  againBtn.addEventListener('click', fetchRecommend);
+</script>
+
+</body>
+</html>
