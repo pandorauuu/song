@@ -1,12 +1,12 @@
 // server.js
-// 这是一个简单的Node.js后端，作用是：
-// 1. 接收前端传来的用户勾选标签（心情/场景/语种）
-// 2. 拼接成搜索关键词
-// 3. 转发请求给你自己部署的网易云音乐API服务（NeteaseCloudMusicApi）
-// 4. 把结果整理好返回给前端
+// 核心逻辑升级说明：
+// 之前的版本把"放松 运动 英文"这种标签词直接当"歌曲搜索词"去搜，
+// 但网易云的歌曲搜索匹配的是"歌名/歌手名"，不是心情场景这类抽象词，所以搜不到结果。
 //
-// 为什么需要这一层？因为前端直接调用音乐API会遇到"跨域"限制，
-// 加一层自己的后端做"中转站"就能绕开这个问题。
+// 现在改成：利用网易云音乐本身就有的"歌单分类"体系（比如"运动"、"放松"、"伤感"
+// 这些本来就是官方歌单分类标签），把用户勾选的标签映射到这些真实分类，
+// 然后：找到该分类下的热门歌单 → 随机选一个歌单 → 从歌单里随机抽一首歌
+// → 再获取这首歌的播放链接，前端就能真正听了。
 
 const express = require('express');
 const cors = require('cors');
@@ -15,15 +15,40 @@ const path = require('path');
 
 const app = express();
 app.use(cors());
-app.use(express.static(path.join(__dirname, 'public'))); // 提供前端静态文件
+app.use(express.static(path.join(__dirname, 'public')));
 
-// 【重要】这里填你自己部署的网易云音乐API地址
-// 需要先按照 https://github.com/Binaryify/NeteaseCloudMusicApi 的说明
-// 把这个开源项目部署到 Render / Railway 等平台（跟你部署ieltswords.top的流程类似）
-// 部署好之后，把得到的地址填在这里，比如 https://my-netease-api.onrender.com
+// 【重要】你自己部署的网易云音乐API地址
 const NETEASE_API_BASE = process.env.NETEASE_API_BASE || 'http://localhost:3000';
 
-// 根据用户勾选的标签，搜索并返回一首推荐歌曲
+// 把咱们UI上的标签，映射到网易云官方歌单分类里真实存在的名字
+// （这些分类名是网易云"发现音乐-歌单广场"里本来就有的，映射越准，匹配效果越好）
+const TAG_TO_CATEGORY = {
+  // 心情
+  emo: '伤感',
+  '元气': '快乐',
+  '放松': '放松',
+  '燃': '兴奋',
+  // 场景
+  '通勤': 'driving',
+  '运动': '运动',
+  '睡前': '夜晚',
+  '学习': '学习',
+  // 语种（网易云分类里没有直接的"语种"概念，这里退而求其次映射到风格相关分类）
+  '华语': '华语',
+  '英文': '欧美',
+  '日语': '日语',
+  '纯音乐': '轻音乐',
+};
+
+// 按优先级挑一个标签来决定分类：心情 > 场景 > 语种
+// （网易云的歌单分类接口一次只能传一个分类，所以只能选其中一个做主导）
+function pickCategory({ mood, scene, lang }) {
+  if (mood && TAG_TO_CATEGORY[mood]) return TAG_TO_CATEGORY[mood];
+  if (scene && TAG_TO_CATEGORY[scene]) return TAG_TO_CATEGORY[scene];
+  if (lang && TAG_TO_CATEGORY[lang]) return TAG_TO_CATEGORY[lang];
+  return '推荐'; // 兜底分类
+}
+
 app.get('/api/recommend', async (req, res) => {
   const { mood, scene, lang } = req.query;
 
@@ -31,50 +56,64 @@ app.get('/api/recommend', async (req, res) => {
     return res.status(400).json({ error: '请至少选择一个偏好标签' });
   }
 
-  // 把标签拼接成搜索关键词，比如"元气 运动 英文"
-  const keywords = [mood, scene, lang].filter(Boolean).join(' ');
+  const category = pickCategory({ mood, scene, lang });
 
   try {
-    // 第一步：用关键词搜索歌曲列表
-    const searchResp = await axios.get(`${NETEASE_API_BASE}/search`, {
-      params: { keywords, limit: 20, type: 1 },
+    // 第一步：按分类找热门歌单
+    const playlistResp = await axios.get(`${NETEASE_API_BASE}/top/playlist`, {
+      params: { cat: category, limit: 20 },
       timeout: 8000,
     });
 
-    const songs = searchResp.data?.result?.songs;
-    if (!songs || songs.length === 0) {
-      return res.status(404).json({ error: '没搜到匹配的歌曲，换个标签试试' });
+    const playlists = playlistResp.data?.playlists;
+    if (!playlists || playlists.length === 0) {
+      return res.status(404).json({ error: `"${category}"分类下暂时没有歌单，换个标签试试` });
     }
 
-    // 从搜索结果里随机挑一首（避免每次都是同一首）
-    const randomIndex = Math.floor(Math.random() * Math.min(songs.length, 10));
-    const picked = songs[randomIndex];
+    // 随机选一个歌单
+    const playlist = playlists[Math.floor(Math.random() * playlists.length)];
 
-    // 第二步：获取这首歌的详情（拿封面图）
-    let picUrl = '';
+    // 第二步：拿这个歌单里的歌曲列表
+    const trackResp = await axios.get(`${NETEASE_API_BASE}/playlist/track/all`, {
+      params: { id: playlist.id, limit: 50 },
+      timeout: 8000,
+    });
+
+    const tracks = trackResp.data?.songs;
+    if (!tracks || tracks.length === 0) {
+      return res.status(404).json({ error: '这个歌单是空的，再试一次吧' });
+    }
+
+    // 随机选一首歌
+    const track = tracks[Math.floor(Math.random() * tracks.length)];
+
+    // 第三步：获取播放链接（免费歌曲通常能拿到，付费/下架歌曲可能拿不到）
+    let playUrl = '';
     try {
-      const detailResp = await axios.get(`${NETEASE_API_BASE}/song/detail`, {
-        params: { ids: picked.id },
+      const urlResp = await axios.get(`${NETEASE_API_BASE}/song/url/v1`, {
+        params: { id: track.id, level: 'standard' },
         timeout: 8000,
       });
-      picUrl = detailResp.data?.songs?.[0]?.al?.picUrl || '';
+      playUrl = urlResp.data?.data?.[0]?.url || '';
     } catch (e) {
-      console.warn('获取封面失败，忽略', e.message);
+      console.warn('获取播放链接失败', e.message);
     }
 
     res.json({
-      id: picked.id,
-      name: picked.name,
-      artist: picked.artists?.map(a => a.name).join('/') || '未知歌手',
-      album: picked.album?.name || '',
-      picUrl,
-      candidateCount: songs.length,
+      id: track.id,
+      name: track.name,
+      artist: track.ar?.map(a => a.name).join('/') || '未知歌手',
+      album: track.al?.name || '',
+      picUrl: track.al?.picUrl || '',
+      playUrl, // 为空表示这首歌暂时无法在线播放（版权限制），前端要处理这种情况
+      fromPlaylist: playlist.name,
+      category,
     });
   } catch (err) {
     console.error('调用音乐API失败:', err.message);
     res.status(500).json({
       error: '音乐服务暂时不可用，请稍后再试',
-      detail: '第三方API可能不稳定，建议检查NETEASE_API_BASE是否配置正确',
+      detail: '第三方API可能不稳定，或该分类接口暂不可用',
     });
   }
 });
